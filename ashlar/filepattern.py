@@ -1,3 +1,4 @@
+import logging
 import re
 import pathlib
 import numpy as np
@@ -27,10 +28,12 @@ class FilePatternMetadata(reg.Metadata):
         self.overlap = overlap
         self._pixel_size = pixel_size
         self._enumerate_tiles()
+        logging.debug(f'FPMetadata: pattern={self.pattern} overlap={self.overlap}')
 
     def _enumerate_tiles(self):
         # Translate a restricted subset of the "format" pattern language to
         # a matching regex with named capture.
+        logging.debug('enumerating tiles...')
         pattern = self.pattern.replace('.', '\.')
         pattern = pattern.replace('(', '\(')
         pattern = pattern.replace(')', '\)')
@@ -55,6 +58,7 @@ class FilePatternMetadata(reg.Metadata):
         self.width = len(cols)
         self.row_offset = min(rows)
         self.col_offset = min(cols)
+        logging.debug(f'height={height} width={width} row_offset={row_offset} col_offset={col_offset}  ')
         path = self.path / self.pattern.format(
             row=self.row_offset, col=self.col_offset,
             channel=self.channel_map[0]
@@ -70,6 +74,7 @@ class FilePatternMetadata(reg.Metadata):
             self.channel_map = {c: None for c in range(img.shape[0])}
             self.multi_channel_tiles = True
         self._num_channels = len(self.channel_map)
+        logging.debug(f'done enumerating tiles from pattern {pattern}')
 
     @property
     def _num_images(self):
@@ -104,12 +109,14 @@ class FilePatternReader(reg.Reader):
 
     def __init__(self, path, pattern, overlap, pixel_size=1.0):
         # See FilePatternMetadata for an explanation of the pattern syntax.
+        logging.debug(f'Creating FilePatternReader: path={path} pattern={pattern}')
         self.path = pathlib.Path(path)
         self.pattern = pattern
         self.overlap = overlap
+        logging.debug('Initializing FilePatternMetadata...')
         self.metadata = FilePatternMetadata(
-            self.path, self.pattern, overlap, pixel_size
-        )
+            self.path, self.pattern, overlap, pixel_size ) 
+        logging.debug('Done')
 
     def read(self, series, c):
         path = self.path / self.filename(series, c)

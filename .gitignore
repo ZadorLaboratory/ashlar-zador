@@ -9,3 +9,5 @@ ashlar/jars
 output/*
 
 .obsidian/*
+/.project
+/.pydevproject

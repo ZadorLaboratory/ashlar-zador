@@ -58,7 +58,7 @@ class FilePatternMetadata(reg.Metadata):
         self.width = len(cols)
         self.row_offset = min(rows)
         self.col_offset = min(cols)
-        logging.debug(f'height={height} width={width} row_offset={row_offset} col_offset={col_offset}  ')
+        logging.debug(f'height={self.height} width={self.width} row_offset={self.row_offset} col_offset={self.col_offset}  ')
         path = self.path / self.pattern.format(
             row=self.row_offset, col=self.col_offset,
             channel=self.channel_map[0]

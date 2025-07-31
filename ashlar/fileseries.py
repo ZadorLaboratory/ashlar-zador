@@ -43,10 +43,10 @@ def _read(path, channel=None):
             # support reading a single plane in isolation. Ideally we wouldn't
             # read the whole file just to extract one channel!
             #img = skimage.io.imread(path)[..., channel]
-            logging.debug(f'suffix={suffix}  in {rgb_suffixes} and non-null channel={channel}')
+            logging.debug(f'suffix={suffix} non-null channel={channel}')
             img = iio.imread(path)[..., channel]
         else:
-            logging.debug(f'suffix={suffix} not in {rgb_suffixes} or null channel channel={channel} ')
+            logging.debug(f'suffix={suffix} not RGB channel={channel} ')
             kwargs = {}
             if channel is not None:
                 kwargs["key"] = channel

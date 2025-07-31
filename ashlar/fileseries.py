@@ -1,8 +1,9 @@
 import re
 import itertools
+import logging
 import pathlib
 import numpy as np
-import skimage.io
+#import skimage.io
 import imageio.v3 as iio
 from . import reg
 
@@ -41,27 +42,34 @@ def _read(path, channel=None):
             # RGB image types with shape (M, N, 3) or (M, N, 4) that don't
             # support reading a single plane in isolation. Ideally we wouldn't
             # read the whole file just to extract one channel!
-            img = skimage.io.imread(path)[..., channel]
+            #img = skimage.io.imread(path)[..., channel]
+            logging.debug(f'suffix={suffix}  in {rgb_suffixes} and non-null channel={channel}')
+            img = iio.imread(path)[..., channel]
         else:
+            logging.debug(f'suffix={suffix} not in {rgb_suffixes} or null channel channel={channel} ')
             kwargs = {}
             if channel is not None:
                 kwargs["key"] = channel
             #img = skimage.io.imread(path, **kwargs)
+            img = iio.imread(path, key=channel)
             
     except:
+        logging.debug(f'switching to BioformatsReader for {path}')
         reader = reg.BioformatsReader(path)
         if channel is None:
             channels = range(reader.metadata.num_channels)
             img = np.stack([reader.read(0, c) for c in channels])
         else:
             img = reader.read(0, channel)
+    #
+    # Switching to imageio v3 ?? 
+    
     # Undo skimage's "helpful" reordering of 3- and 4-channel images.
-    if (
-        img.ndim == 3
-        and img.shape[2] in (3, 4)
-        and img.shape[0] not in (3, 4)
-    ):
+    if ( img.ndim == 3 and img.shape[2] in (3, 4) and img.shape[0] not in (3, 4) ):
+        logging.warning(f'adjusting image shape: {img.shape}' )
         img = np.moveaxis(img, 2, 0)
+        logging.warning(f'adjusted image shape to: {img.shape}' )
+    
     return img
 
 

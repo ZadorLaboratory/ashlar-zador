@@ -121,8 +121,7 @@ class FilePatternReader(reg.Reader):
         self.pattern = pattern
         self.overlap = overlap
         logging.debug('Initializing FilePatternMetadata...')
-        self.metadata = FilePatternMetadata(
-            self.path, self.pattern, overlap, pixel_size ) 
+        self.metadata = FilePatternMetadata( self.path, self.pattern, overlap, pixel_size ) 
         logging.debug('Done Initializing FilePatternMetadata.')
 
     def __repr__(self):

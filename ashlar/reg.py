@@ -1,8 +1,10 @@
+import logging
 import sys
 import math
 import warnings
 import xml.etree.ElementTree
 import pathlib
+import pprint
 import jnius_config
 import numpy as np
 import scipy.spatial.distance
@@ -437,9 +439,23 @@ class CachingReader(Reader):
     """Wraps a reader to provide tile image caching."""
 
     def __init__(self, reader, channel):
+        logging.debug(f'Creating CachingReader for channel={channel}')
         self.reader = reader
         self.channel = channel
         self._cache = {}
+        logging.debug(f'Done initializing CachingReader.')        
+
+    def __repr__(self):
+        s = f'CachingReader: ' 
+        s+= f'channel={self.channel} '
+        try:
+            s += f'thumbnail_scale={self.thumbnail_scale} '
+        except Exception as e:
+            logging.debug(f'no thumbnail data.')
+
+        s += f'reader=\n{self.reader} '            
+        s += f'\ncache={self._cache} '
+        return s
 
     @property
     def metadata(self):
@@ -489,6 +505,7 @@ class EdgeAligner(object):
         self, reader, channel=0, max_shift=15, alpha=0.01, max_error=None,
         randomize=False, filter_sigma=0.0, do_make_thumbnail=True, verbose=False
     ):
+        logging.debug(f'Creating EdgeAligner...')
         self.channel = channel
         self.reader = CachingReader(reader, self.channel)
         self.verbose = verbose
@@ -500,10 +517,20 @@ class EdgeAligner(object):
         self.randomize = randomize
         self.filter_sigma = filter_sigma
         self.do_make_thumbnail = do_make_thumbnail
+        self.positions = None
         self._cache = {}
         self.errors_negative_sampled = np.empty(0)
+        logging.debug(f'Done initializing EdgeAligner.')
 
     neighbors_graph = neighbors_graph
+
+    def __repr__(self):
+        s = 'EdgeAligner: '
+        s += f'channel={self.channel} max_shift={self.max_shift} max_shift_pixels={self.max_shift_pixels} '
+        s += f'alpha={self.alpha} max_error={self.max_error} '
+        s += f'positions=\n{self.positions}\n'
+        s += f'reader=\n{self.reader} '
+        return s
 
     def run(self):
         self.make_thumbnail()
@@ -515,6 +542,7 @@ class EdgeAligner(object):
         self.fit_model()
 
     def make_thumbnail(self):
+        logging.debug(f'do_make_thumbnail={self.do_make_thumbnail}')
         if not self.do_make_thumbnail:
             return
         self.reader.thumbnail_scale = thumbnail.calculate_scale(self.reader)
@@ -526,6 +554,7 @@ class EdgeAligner(object):
         # This might be better addressed by removing the +1 from the
         # neighbors_graph max_distance calculation and ensuring the graph is
         # fully connected.
+        logging.debug(f'checking overlaps...')
         pos = self.metadata.positions
         overlaps = np.array([
             self.metadata.size - abs(pos[t1] - pos[t2])
@@ -533,14 +562,20 @@ class EdgeAligner(object):
         ])
         failures = np.any(overlaps < 1, axis=1) if len(overlaps) else []
         if len(failures) and all(failures):
-            warn_data("No tiles overlap, attempting alignment anyway.")
+            logging.warning("No tiles overlap, attempting alignment anyway.")
+            #warn_data("No tiles overlap, attempting alignment anyway.")
         elif any(failures):
-            warn_data("Some neighboring tiles have zero overlap.")
+            logging.warning("Some neighboring tiles have zero overlap.")
+            #warn_data("Some neighboring tiles have zero overlap.")
+        logging.debug('overlaps checked.')
+
 
     def compute_threshold(self):
+        logging.debug(f'computing threshold...')
         if self.max_error is not None:
-            if self.verbose:
-                print("    using explicit error threshold")
+            logging.info("\r    using explicit error threshold")
+            #if self.verbose:
+            #    print("    using explicit error threshold")
             return
         # Compute error threshold for rejecting aligments. We generate a
         # distribution of error scores for many known non-overlapping image
@@ -548,9 +583,11 @@ class EdgeAligner(object):
         # The percentile becomes our accepted false-positive ratio.
         edges = self.neighbors_graph.edges
         num_tiles = self.metadata.num_images
+        logging.debug(f'edges={edges}')
         # If not enough tiles overlap to matter, skip this whole thing.
         if len(edges) <= 1:
             self.max_error = np.inf
+            logging.debug(f'no edges. returning.')
             return
         widths = np.array([
             self.intersection(t1, t2).shape.min()
@@ -558,6 +595,7 @@ class EdgeAligner(object):
         ])
         w = widths.max()
         max_offset = self.metadata.size[0] - w
+        logging.debug(f'max widths={w} max_offset={max_offset}')
         # Number of possible pairs minus number of actual neighbor pairs.
         num_distant_pairs = num_tiles * (num_tiles - 1) // 2 - len(edges)
         # Reduce permutation count for small datasets -- there are fewer
@@ -569,6 +607,8 @@ class EdgeAligner(object):
         # Generate n random non-overlapping image strips. Strips are always
         # horizontal, across the entire image width.
         max_tries = 100
+        logging.debug(f'num_distant_pairs={num_distant_pairs} n={n} max_tries={max_tries}')
+        
         if self.randomize is False:
             random_state = np.random.RandomState(0)
         else:
@@ -598,35 +638,45 @@ class EdgeAligner(object):
                         break
             else:
                 # Retries exhausted. This should be very rare.
-                warn_data(
-                    "Could not find non-overlapping strips in {max_tries} tries"
-                )
+                #warn_data(
+                #    "Could not find non-overlapping strips in {max_tries} tries"
+                #)
+                logging.warning(f"Could not find non-overlapping strips in {max_tries} tries")
             pairs[i] = t1, t2
             offsets[i] = o1, o2
         errors = np.empty(n)
+        
         for i, ((t1, t2), (offset1, offset2)) in enumerate(zip(pairs, offsets)):
-            if self.verbose and (i % 10 == 9 or i == n - 1):
-                sys.stdout.write(
-                    '\r    quantifying alignment error %d/%d' % (i + 1, n)
-                )
-                sys.stdout.flush()
+            #if self.verbose and (i % 10 == 9 or i == n - 1):
+                #sys.stdout.write(
+                #    '\r    quantifying alignment error %d/%d' % (i + 1, n)
+                #)
+                #sys.stdout.flush()
+            if (i % 10 == 9 or i == n - 1):
+                logging.info('\r    quantifying alignment error %d/%d' % (i + 1, n) )
+                
             img1 = self.reader.read(t1, self.channel)[offset1:offset1+w, :]
             img2 = self.reader.read(t2, self.channel)[offset2:offset2+w, :]
             _, errors[i] = utils.register(img1, img2, self.filter_sigma, upsample=1)
-        if self.verbose:
-            print()
+        #if self.verbose:
+        #    print()
         self.errors_negative_sampled = errors
         self.max_error = np.percentile(errors, self.alpha * 100)
+        logging.debug(f'done computing thresholds. max_error={self.max_error} errors=\n{self.errors_negative_sampled} ')
+
+
 
     def register_all(self):
+        logging.debug(f'registering all images...')
         n = self.neighbors_graph.size()
         for i, (t1, t2) in enumerate(self.neighbors_graph.edges, 1):
-            if self.verbose:
-                sys.stdout.write('\r    aligning edge %d/%d' % (i, n))
-                sys.stdout.flush()
+            logging.info('\r    aligning edge %d/%d' % (i, n))
+            #if self.verbose:
+            #    sys.stdout.write('\r    aligning edge %d/%d' % (i, n))
+            #    sys.stdout.flush()
             self.register_pair(t1, t2)
-        if self.verbose:
-            print()
+        #if self.verbose:
+        #    print()
         self.all_errors = np.array([x[1] for x in self._cache.values()])
         # Set error values above the threshold to infinity.
         for k, v in self._cache.items():
@@ -635,6 +685,7 @@ class EdgeAligner(object):
 
     def build_spanning_tree(self):
         # Note that this may be disconnected, so it's technically a forest.
+        logging.debug(f'building spanning tree...')
         g = nx.Graph()
         g.add_nodes_from(self.neighbors_graph)
         g.add_weighted_edges_from(
@@ -644,17 +695,24 @@ class EdgeAligner(object):
         )
         spanning_tree = nx.Graph()
         spanning_tree.add_nodes_from(g)
+        ncc = 0
         for c in nx.connected_components(g):
+            ncc += 1
             cc = g.subgraph(c)
             center = nx.center(cc)[0]
             paths = nx.single_source_dijkstra_path(cc, center).values()
             for path in paths:
                 nx.add_path(spanning_tree, path)
         self.spanning_tree = spanning_tree
+        logging.debug(f'done spanning_tree={self.spanning_tree} n_connected_components={ncc}')
+
 
     def calculate_positions(self):
+        logging.debug(f'calculating positions...')
         shifts = {}
+        ncc = 0
         for c in nx.connected_components(self.spanning_tree):
+            ncc += 1
             cc = self.spanning_tree.subgraph(c)
             center = nx.center(cc)[0]
             shifts[center] = np.array([0, 0])
@@ -670,14 +728,22 @@ class EdgeAligner(object):
         else:
             # TODO: fill in shifts and positions with 0x2 arrays
             raise NotImplementedError("No images")
+        pshifts = pprint.pformat(shifts, indent=2)
+        logging.debug(f'handled {ncc} components. shifts=\n{pshifts}')
+        logging.debug(f'positions=\n{self.positions}')
+
 
     def fit_model(self):
+        logging.debug('fitting model...')
         components = sorted(
             nx.connected_components(self.spanning_tree),
             key=len, reverse=True
         )
+        cc_idx = 0
         # Fit LR model on positions of largest connected component.
         cc0 = list(components[0])
+        logging.debug(f'running regression on component {cc_idx}') 
+        logging.debug(f'len(components)={len(components)} n_nodes={len(cc0)}')
         self.lr = sklearn.linear_model.LinearRegression()
         self.lr.fit(self.metadata.positions[cc0], self.positions[cc0])
         # Fix up degenerate transform matrix. This happens when the spanning
@@ -686,16 +752,20 @@ class EdgeAligner(object):
         if np.linalg.det(self.lr.coef_) < 1e-3:
             # FIXME We should probably exit here, not just warn. We may provide
             # an option to force it anyway.
-            warn_data(
-                "Could not align enough edges, proceeding anyway with original"
-                " stage positions."
-            )
+            #warn_data(
+            #    "Could not align enough edges, proceeding anyway with original"
+            #    " stage positions."
+            #)
+            logging.warning('Could not align enough edges, proceeding anyway with original\n stage positions.')
             self.lr.coef_ = np.diag(np.ones(2))
             self.lr.intercept_ = np.zeros(2)
         # Adjust position of remaining components so their centroids match
         # the predictions of the model.
+        cc_idx += 1
+        logging.debug('adjusting positions for remaining components.')
         for cc in components[1:]:
             nodes = list(cc)
+            logging.debug(f'handling component {cc_idx} n_nodes={len(nodes)}')
             centroid_m = np.mean(self.metadata.positions[nodes], axis=0)
             centroid_f = np.mean(self.positions[nodes], axis=0)
             shift = self.lr.predict([centroid_m])[0] - centroid_f
@@ -705,10 +775,12 @@ class EdgeAligner(object):
         self.positions -= self.origin
         self.lr.intercept_ -= self.origin
         self.centers = self.positions + self.metadata.size / 2
+        logging.debug('done fitting model.')
 
 
     def register_pair(self, t1, t2):
         """Return relative shift between images and the alignment error."""
+        logging.debug(f'registering pair t1={t1} t2={t2} ...')
         key = tuple(sorted((t1, t2)))
         try:
             shift, error = self._cache[key]
@@ -739,9 +811,11 @@ class EdgeAligner(object):
         if t1 > t2:
             shift = -shift
         # Return copy of shift to prevent corruption of cached values.
+        logging.debug(f't1={t1} t2={t2} shift={shift} error={error}')
         return shift.copy(), error
 
     def _register(self, t1, t2, min_size=0):
+        logging.debug(f'registering pair t1={t1} t2={t2} to metadata object. ')
         its, img1, img2 = self.overlap(t1, t2, min_size)
         # Account for padding, flipping the sign depending on the direction
         # between the tiles.
@@ -751,6 +825,7 @@ class EdgeAligner(object):
         padding = its.padding * [sy, sx]
         shift, error = utils.register(img1, img2, self.filter_sigma)
         shift += padding
+        logging.debug(f't1={t1} t2={t2} shift={shift} error={error}')
         return shift, error
 
     def intersection(self, t1, t2, min_size=0, shift=None):
@@ -1031,6 +1106,7 @@ class Mosaic(object):
         flip_mosaic_x=False, flip_mosaic_y=False, barrel_correction=None,
         verbose=False
     ):
+        logging.debug('creating Mosaic ...')
         self.aligner = aligner
         self.shape = tuple(shape)
         self.channels = self._sanitize_channels(channels)
@@ -1040,6 +1116,12 @@ class Mosaic(object):
         self.dtype = aligner.metadata.pixel_dtype
         self._load_correction_profiles(dfp_path, ffp_path)
         self.verbose = verbose
+        logging.debug('Done initializing Mosaic.')
+
+    def __repr__(self):
+        s = 'Mosaic: '
+        s += f'shape={self.shape} channels={self.channels} flip_mosaic_x={self.flip_mosaic_x} flip_mosaic_y={self.flip_mosaic_y} '
+        return s
 
     def _sanitize_channels(self, channels):
         all_channels = range(self.aligner.metadata.num_channels)

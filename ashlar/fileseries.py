@@ -3,6 +3,7 @@ import itertools
 import pathlib
 import numpy as np
 import skimage.io
+import imageio.v3 as iio
 from . import reg
 
 
@@ -11,7 +12,6 @@ from . import reg
 # name or number, and well name.
 #
 # This code is experimental and probably still has a lot of rough edges.
-
 
 def format_to_regex(s):
     # Translate a restricted subset of the "format" pattern language to
@@ -46,7 +46,8 @@ def _read(path, channel=None):
             kwargs = {}
             if channel is not None:
                 kwargs["key"] = channel
-            img = skimage.io.imread(path, **kwargs)
+            #img = skimage.io.imread(path, **kwargs)
+            
     except:
         reader = reg.BioformatsReader(path)
         if channel is None:

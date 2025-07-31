@@ -34,9 +34,9 @@ class FilePatternMetadata(reg.Metadata):
         # Translate a restricted subset of the "format" pattern language to
         # a matching regex with named capture.
         logging.debug('enumerating tiles...')
-        pattern = self.pattern.replace('.', '\.')
-        pattern = pattern.replace('(', '\(')
-        pattern = pattern.replace(')', '\)')
+        pattern = self.pattern.replace('.', '\\.')
+        pattern = pattern.replace('(', '\\(')
+        pattern = pattern.replace(')', '\\)')
         regex = re.sub(r'{([^:}]+)(?:[^}]*)}', r'(?P<\1>.*?)', pattern)
         rows = set()
         cols = set()
@@ -76,6 +76,12 @@ class FilePatternMetadata(reg.Metadata):
         self._num_channels = len(self.channel_map)
         logging.debug(f'done enumerating tiles from pattern {pattern}')
 
+    def __repr__(self):
+        s= f'FilePatternMetadata: num_images={self._actual_num_images} height={self.height} '
+        s += f'width={self.width} tile_size={self._tile_size} num_channels={self._num_channels}'
+        s += f'row_offset={self.row_offset} col_offset={self.col_offset} multi_channel_files={self.multi_channel_tiles} '
+        return s
+
     @property
     def _num_images(self):
         return self._actual_num_images
@@ -105,6 +111,7 @@ class FilePatternMetadata(reg.Metadata):
         return row, col
 
 
+
 class FilePatternReader(reg.Reader):
 
     def __init__(self, path, pattern, overlap, pixel_size=1.0):
@@ -116,7 +123,11 @@ class FilePatternReader(reg.Reader):
         logging.debug('Initializing FilePatternMetadata...')
         self.metadata = FilePatternMetadata(
             self.path, self.pattern, overlap, pixel_size ) 
-        logging.debug('Done')
+        logging.debug('Done Initializing FilePatternMetadata.')
+
+    def __repr__(self):
+        s=f'FilePatternReader: path={self.path} pattern={self.pattern} overlap={self.overlap} metadata=\n{self.metadata}'
+        return s
 
     def read(self, series, c):
         path = self.path / self.filename(series, c)
@@ -128,3 +139,6 @@ class FilePatternReader(reg.Reader):
         row, col = self.metadata.tile_rc(series)
         c = self.metadata.channel_map[c]
         return self.pattern.format(row=row, col=col, channel=c)
+
+
+        
